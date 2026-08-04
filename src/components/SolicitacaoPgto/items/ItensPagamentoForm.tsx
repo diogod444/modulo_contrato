@@ -236,10 +236,17 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
       console.log(`[findLastPayment] Buscando histórico ou dados originais para IDFLUIG: ${contrato.IDFLUIG}`);
 
       // 1. Busca histórico de pagamentos (ML001090 e ML001091)
+      // Fornecedor fica no cabeçalho (ML001090), igual ao padrão de ML001134/ML001144.
       const responsePagamento = await axios.post(fluigConfig.datasetUrl, {
         name: "ds_dw_sql",
         fields: [
-          `SELECT TOP 1 ml91.* FROM ML001090 ml90
+          `SELECT TOP 1
+            ml91.*,
+            ml90.TMOV_T_CODCFO AS TITMMOV_T_CODCFO,
+            ml90.DESCRICAO_CODCFO AS TITMMOV_T_DESCRICAO_CODCFO,
+            ml90.TMOV_T_CGCCFO AS TITMMOV_T_CGCCFO,
+            ml90.TMOV_T_CODCOLCFO AS TITMMOV_T_CODCOLCFO
+         FROM ML001090 ml90
          JOIN ML001091 ml91 ON ml90.documentid = ml91.documentid
          WHERE ml90.TCNT_T_IDCONTRATO = '${contrato.IDFLUIG}'
          ORDER BY ml90.documentid DESC`,
@@ -247,9 +254,16 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
         ],
       });
 
-      const valoresPagamento = Array.isArray(responsePagamento.data.content.values)
-        ? responsePagamento.data.content.values
-        : responsePagamento.data.content.values ? [responsePagamento.data.content.values] : [];
+      const erroPagamento = responsePagamento.data.content.values?.[0]?.ERRO;
+      if (erroPagamento) {
+        console.error("[findLastPayment] Erro na consulta de histórico de pagamento:", erroPagamento);
+      }
+
+      const valoresPagamento = erroPagamento || !responsePagamento.data.content.values
+        ? []
+        : Array.isArray(responsePagamento.data.content.values)
+          ? responsePagamento.data.content.values
+          : [responsePagamento.data.content.values];
 
       // 2. Se NÃO houver pagamento anterior, busca os itens ORIGINAIS do contrato
       if (valoresPagamento.length === 0) {
@@ -275,8 +289,8 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
               ml44.TITMMOV_T_QUANTIDADE,
               ml44.TITMMOV_T_PRECOUNITARIO,
               ml44.TITMMOV_T_VALORTOTALITEM,
-              ml44.TITMMOV_T_CODCCUSTO,
-              ml44.TITMMOV_T_DESCRICAO_CODCCUSTO,
+              ml34.TMOV_T_CODCCUSTO,
+              ml34.DESCRICAO_CODCCUSTO,
               ml34.TMOV_T_CODCFO,
               ml34.DESCRICAO_CODCFO,
               ml34.TMOV_T_CGCCFO,
@@ -290,6 +304,12 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
             `java:/jdbc/AppDS`,
           ],
         });
+
+        const erroContrato = responseContrato.data.content.values?.[0]?.ERRO;
+        if (erroContrato) {
+          console.error("[findLastPayment] Erro na consulta de itens originais:", erroContrato);
+          return;
+        }
 
         const itensOriginais = Array.isArray(responseContrato.data.content.values)
           ? responseContrato.data.content.values
@@ -307,8 +327,8 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
             TITMMOV_T_QUANTIDADE: item.TITMMOV_T_QUANTIDADE,
             TITMMOV_T_PRECOUNITARIO: item.TITMMOV_T_PRECOUNITARIO,
             TITMMOV_T_VALORTOTALITEM: item.TITMMOV_T_VALORTOTALITEM,
-            TITMMOV_T_CODCCUSTO: item.TITMMOV_T_CODCCUSTO || "",
-            TITMMOV_T_DESCRICAO_CODCCUSTO: item.TITMMOV_T_DESCRICAO_CODCCUSTO || "",
+            TITMMOV_T_CODCCUSTO: item.TMOV_T_CODCCUSTO || "",
+            TITMMOV_T_DESCRICAO_CODCCUSTO: item.DESCRICAO_CODCCUSTO || "",
             TITMMOV_T_CODCFO: item.TMOV_T_CODCFO || "",
             TITMMOV_T_DESCRICAO_CODCFO: item.DESCRICAO_CODCFO || "",
             TITMMOV_T_CGCCFO: item.TMOV_T_CGCCFO || "",
@@ -324,6 +344,8 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
 
       // 3. Se houver histórico de pagamento, usa o último como base
       const ultimo = valoresPagamento[0];
+      const precoUnitario = parseFloat(ultimo.TITMMOV_T_PRECOUNITARIO) || 0;
+      const quantidade = parseFloat(ultimo.TITMMOV_T_QUANTIDADE) || 0;
       const itemInserir: ITItmmov = {
         TITMMOV_T_SEQF: (listItems.length + 1).toString(),
         TITMMOV_T_CODIGOPRD: ultimo.TITMMOV_T_CODIGOPRD,
@@ -334,9 +356,13 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
         TITMMOV_T_DESCTBORCAMENTO: ultimo.TITMMOV_T_DESCTBORCAMENTO || contrato.TMOV_T_TBORCAMENTO,
         TITMMOV_T_PRECOUNITARIO: ultimo.TITMMOV_T_PRECOUNITARIO,
         TITMMOV_T_QUANTIDADE: ultimo.TITMMOV_T_QUANTIDADE,
-        TITMMOV_T_VALORTOTALITEM: (
-          Number(ultimo.TITMMOV_T_PRECOUNITARIO) * parseFloat(ultimo.TITMMOV_T_QUANTIDADE)
-        ).toFixed(2),
+        TITMMOV_T_CODCFO: ultimo.TITMMOV_T_CODCFO || contrato.TMOV_T_CODCFO || "",
+        TITMMOV_T_DESCRICAO_CODCFO: ultimo.TITMMOV_T_DESCRICAO_CODCFO || contrato.DESCRICAO_CODCFO || "",
+        TITMMOV_T_CGCCFO: ultimo.TITMMOV_T_CGCCFO || contrato.TMOV_T_CGCCFO || "",
+        TITMMOV_T_CODCOLCFO: ultimo.TITMMOV_T_CODCOLCFO || contrato.TMOV_T_CODCOLIGADA || "",
+        TITMMOV_T_CODCCUSTO: ultimo.TITMMOV_T_CODCCUSTO || contrato.TMOV_T_CODCCUSTO || "",
+        TITMMOV_T_DESCRICAO_CODCCUSTO: ultimo.TITMMOV_T_DESCRICAO_CODCCUSTO || contrato.DESCRICAO_CODCCUSTO || "",
+        TITMMOV_T_VALORTOTALITEM: (precoUnitario * quantidade).toFixed(2),
       };
 
       console.log("[findLastPayment] Inserindo item baseado no último pagamento.");
