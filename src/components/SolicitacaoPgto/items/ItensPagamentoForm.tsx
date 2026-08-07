@@ -44,6 +44,8 @@ import { useCentroCustoContext } from "../../CentroCusto/useCentroCustoContext";
 import useCentroCusto from "../../CentroCusto/useCentroCusto";
 import { CentroCustoModalSelect } from "../../CentroCusto/CentroCustoModalSelect";
 
+import { AccountTreeOutlined } from "@mui/icons-material";
+
 type IEmissorItem = {
   CODCFO: string;
   DESCRICAO_CODCFO: string;
@@ -371,15 +373,7 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
     } catch (e) {
       console.error("[findLastPayment] Erro crítico: ", e);
     }
-  }, [
-    contrato.IDFLUIG,
-    contrato.TF_T_CODCONTRATO,
-    contrato.TMOV_T_CODTBORCAMENTO,
-    contrato.TMOV_T_TBORCAMENTO,
-    contrato.TF_T_VALORCONTRATO,
-    listItems,
-    setListItems,
-  ]);
+  }, [contrato.IDFLUIG, contrato.TF_T_CODCONTRATO, contrato.TMOV_T_CODTBORCAMENTO, contrato.TMOV_T_TBORCAMENTO, listItems, setListItems]);
 
   useEffect(() => {
     if (contrato.IDFLUIG && listItems.length === 0) {
@@ -410,6 +404,30 @@ export default function ItensPagamentoForm({ readOnly = false }: { readOnly?: bo
       field: "TITMMOV_T_DESCRICAO_CODCCUSTO",
       headerName: "Centro de Custo",
       width: 180,
+    },
+    {
+      field: "IDFLUIG",
+      headerName: "ID Fluig",
+      width: 120,
+      renderCell: (params) => {
+        // Se não houver ID Fluig na linha, usa o do contrato principal como fallback
+        const idFluig = params.value || contrato.IDFLUIG;
+
+        if (!idFluig) return "-";
+
+        return (
+          <a
+            href={`${fluigConfig.visualizarProcesso}${idFluig}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <div className="text-blue-500 text-sm flex flex-row gap-1 items-center">
+              <span><AccountTreeOutlined fontSize="small" /></span>
+              <span>{idFluig}</span>
+            </div>
+          </a>
+        );
+      },
     },
     {
       field: "",
